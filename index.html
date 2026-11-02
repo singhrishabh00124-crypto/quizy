@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#fff7ed">
+<title>Quizy — Class 9–12 Test Practice</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#171717;--paper:#fff7ed;--orange:#ff8a00}
+*{box-sizing:border-box}body{font-family:'Fredoka',sans-serif;background:var(--paper);color:var(--ink);min-height:100vh}
+.card-3d{box-shadow:6px 6px 0 #000;border:2.5px solid #000;border-radius:18px;transition:transform .12s,box-shadow .12s}
+.card-3d:active{transform:translate(3px,3px);box-shadow:3px 3px 0 #000}
+.btn{border:2px solid #111;border-radius:13px;padding:10px 16px;font-weight:600;box-shadow:3px 3px 0 #111}
+.btn:active{transform:translate(2px,2px);box-shadow:1px 1px 0 #111}
+input,select,textarea{border:2px solid #222;border-radius:10px;padding:10px;background:#fff;width:100%;color:#111}
+label{font-weight:600;display:block;margin:10px 0 5px}
+.hidden{display:none!important}.ad-slot{min-height:0}.muted{color:#6b625a}.option:disabled{opacity:.7}
+.progress{height:12px;border:2px solid #111;border-radius:99px;overflow:hidden;background:#fff}.progress>div{height:100%;background:#6bcb77;transition:width .2s}
+.tab-active{background:#171717;color:white}.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:#171717;color:#fff;padding:12px 18px;border-radius:12px;z-index:99;max-width:90%;box-shadow:4px 4px 0 #ffb703}
+</style>
+</head>
+<body>
+<div id="app" class="max-w-5xl mx-auto px-4 py-5"></div>
+<div id="toastRoot"></div>
+<script>
+// CONFIG — Replace the publishable key with the real key from Supabase Project Settings.
+const SUPABASE_URL = 'https://kpsmyquqobrzjvyclqpk.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_dFnWnGdcMKJuj6OMi-3r_Q_Y-_BvYRL';
+const ADMIN_EMAIL = 'singhrishabh00124@gmail.com';
+const OWNER_NAME = 'Rishabh Singh';
+const OWNER_EMAIL = ADMIN_EMAIL;
+// Start the UI even if a third-party CDN is blocked or Supabase is not configured.
+let supabase = null;
+function initSupabase(){
+  if(!configured()) return false;
+  if(!window.supabase || !window.supabase.createClient) return false;
+  try { supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY); return true; }
+  catch(e) { console.error('Supabase init failed:', e); return false; }
+}
+const makeDeviceId=()=>('xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx').replace(/[xy]/g,c=>{const r=Math.random()*16|0;return(c==='x'?r:(r&0x3|0x8)).toString(16)});
+let savedDeviceId='';
+try { savedDeviceId=localStorage.getItem('deviceId')||''; } catch(e) {}
+const S={page:'home',cls:null,stream:null,subject:null,test:null,qs:[],idx:0,score:0,answers:[],deviceId:savedDeviceId||makeDeviceId(),adSlots:[],timer:900,timerId:null,startedAt:0,adminTab:'upload'};
+try { localStorage.setItem('deviceId',S.deviceId); } catch(e) {}
+const $=id=>document.getElementById(id);
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function toast(msg){$('toastRoot').innerHTML=`<div class="toast">${esc(msg)}</div>`;setTimeout(()=>$('toastRoot').innerHTML='',2800)}
+function fail(e){console.error(e);toast(e?.message||'Something went wrong. Check Supabase configuration.')}
+function configured(){return !!SUPABASE_KEY && !SUPABASE_KEY.includes('REPLACE_WITH_REAL')}
+function adDiv(key){return isAdEnabled(key)?`<div class="ad-slot my-5 text-center" data-ad="${esc(key)}"></div>`:''}
+function isAdEnabled(key){return S.adSlots.some(x=>x.slot_key===key&&x.enabled)}
+async function loadAds(){if(!configured())return;const {data,error}=await supabase.from('ad_slots').select('*');if(error){console.warn(error);return}S.adSlots=data||[]}
+function header(back=true){return `<div class="flex items-center justify-between mb-5"><button class="btn bg-white" onclick="${back?'goBack()':'goHome()'}">← Back</button><div class="font-bold text-xl">🟠 Quizy</div></div>`}
+function shell(content){$('app').innerHTML=`<main>${content}</main>`}
+function render(){
+ clearInterval(S.timerId);
+ if(S.page==='home')renderHome();
+ else if(S.page==='class')renderClass();
+ else if(S.page==='subject')renderSubject();
+ else if(S.page==='test')renderTest();
+ else if(S.page==='result')renderResult();
+ else if(S.page==='admin')renderAdmin();
+ else renderInfo(S.page);
+}
+function renderHome(){
+ shell(`<section class="text-center pt-5 pb-3"><p class="text-2xl">Namaste! 👋</p><h1 class="text-6xl sm:text-7xl font-bold text-orange-500" style="text-shadow:4px 4px 0 #171717">Quizy</h1><p class="text-lg font-semibold mt-2">Learn • Practice • Shine</p><p class="muted">Bihar Board + CBSE | Classes 9–12</p></section>
+ <div class="grid grid-cols-2 gap-4 my-7">
+ ${[[9,'📚','#FFD93D'],[10,'🎯','#6BCB77'],[11,'🔬','#4D96FF'],[12,'🎓','#FF6B6B']].map(([c,ic,col])=>`<button onclick="openClass(${c})" class="card-3d p-5 sm:p-8 text-left" style="background:${col}"><div class="text-4xl">${ic}</div><div class="text-3xl font-bold mt-2">Class ${c}</div><div class="font-semibold">Start learning →</div></button>`).join('')}
+ </div><div class="card-3d bg-white p-4 text-center"><div class="text-2xl font-bold">📈 Your practice starts here</div><p class="muted">Chapter-wise tests • Instant results • Progress reports</p></div>
+ ${adDiv('HOME_1')}<div class="text-center my-6"><button class="btn bg-black text-white" onclick="openAdmin()">⚙ Admin</button></div>
+ <footer class="text-center text-sm muted py-5 border-t-2 border-black/20"><div class="flex flex-wrap justify-center gap-4"><a href="#" onclick="openInfo('about')">About</a><a href="#" onclick="openInfo('privacy')">Privacy</a><a href="#" onclick="openInfo('contact')">Contact</a><a href="#" onclick="openInfo('disclaimer')">Disclaimer</a></div><p class="mt-3">© ${new Date().getFullYear()} Quizy · Created by ${esc(OWNER_NAME)}</p></footer>`);
+}
+function openClass(c){S.cls=c;S.stream=null;S.page='class';render();if(c<11)loadSubjects()}
+function renderClass(){
+ let streams=S.cls>=11?`<h2 class="text-2xl font-bold mb-4">Choose your stream</h2><div class="grid gap-4 sm:grid-cols-3">${[['Science','🔬','#b9dcff'],['Commerce','💼','#c8f7d0'],['Arts','🎨','#ffd3df']].map(([n,i,c])=>`<button class="card-3d p-6 text-2xl font-bold" style="background:${c}" onclick="openStream('${n}')">${i}<br>${n}</button>`).join('')}</div>`:`<h2 class="text-2xl font-bold">Choose a subject</h2><div id="subjList" class="grid sm:grid-cols-2 gap-3 mt-4"><p>Loading subjects…</p></div>`;
+ shell(`${header()}<h1 class="text-4xl font-bold mb-5">Class ${S.cls}</h1>${streams}${adDiv('CLASS_9_1')}<div id="subjList2" class="grid sm:grid-cols-2 gap-3 mt-4"></div>`);
+}
+function openStream(st){S.stream=st;render();loadSubjects()}
+async function loadSubjects(){
+ if(!configured()){toast('Add your real Supabase publishable key in CONFIG first.');return}
+ try{
+ let q=supabase.from('subjects').select('id,name,icon,color,total_chapters').eq('class_id',S.cls).order('name');
+ if(S.cls>=11){const {data:st,error:se}=await supabase.from('streams').select('id').eq('class_id',S.cls).eq('name',S.stream).single();if(se)throw se;q=q.eq('stream_id',st.id)}
+ else {const {data:st}=await supabase.from('streams').select('id').eq('class_id',S.cls).eq('name','General').single();if(st)q=q.eq('stream_id',st.id)}
+ const {data,error}=await q;if(error)throw error;
+ const html=(data||[]).map(x=>`<button class="card-3d bg-white p-4 text-left flex items-center gap-3" onclick="openSubject('${x.id}','${esc(x.name).replace(/'/g,"\\'")}')"><span class="text-3xl">${esc(x.icon||'📘')}</span><span><b class="text-xl">${esc(x.name)}</b><small class="block muted">${x.total_chapters||15} chapters</small></span></button>`).join('')||'<p class="muted">No subjects added yet. Ask your admin to add subjects.</p>';
+ const target=$('subjList')||$('subjList2');if(target)target.innerHTML=html;
+ }catch(e){fail(e)}
+}
+function openSubject(id,name){S.subject={id,name};S.page='subject';render();loadTests()}
+function renderSubject(){shell(`${header()}<h1 class="text-3xl font-bold">${esc(S.subject?.name||'Subject')}</h1><p class="muted mb-5">Class ${S.cls}${S.stream?' • '+S.stream:''} • Chapter tests</p>${adDiv('SUBJECT_LIST_1')}${adDiv('TEST_LIST_1')}<div id="testList" class="grid gap-3"><p>Loading tests…</p></div>`)}
+async function loadTests(){
+ if(!configured())return;
+ try{const {data,error}=await supabase.from('tests').select('*').eq('subject_id',S.subject.id).eq('is_published',true).order('chapter_no');if(error)throw error;
+ $('testList').innerHTML=(data||[]).map(t=>`<button class="card-3d bg-white p-4 text-left" onclick="startTest('${t.slug}')"><div class="flex justify-between gap-3"><b class="text-lg">Chapter ${t.chapter_no}: ${esc(t.chapter_name)}</b><span class="text-xs bg-yellow-200 rounded-full px-3 py-1 h-fit">${esc(t.difficulty)}</span></div><div class="muted text-sm mt-2">${t.type==='pro'?'PRO • ₹'+t.price:'FREE'} · ${t.total_questions} questions · ${t.time_limit} min · ${esc(t.language)}</div></button>`).join('')||'<div class="card-3d bg-white p-5">No published tests in this subject yet.</div>';
+ }catch(e){fail(e)}
+}
+async function startTest(slug){
+ if(!configured()){toast('Configure Supabase key first.');return}
+ try{
+ const {data:test,error}=await supabase.from('tests').select('*').eq('slug',slug).single();if(error)throw error;
+ const {data:qs,error:qe}=await supabase.from('questions').select('*').eq('test_id',test.id).order('question_no');if(qe)throw qe;
+ if(!qs?.length){toast('This test has no questions yet.');return}
+ S.test=test;S.qs=qs.slice(0,Number(test.total_questions)||20);S.idx=0;S.score=0;S.answers=[];S.timer=(Number(test.time_limit)||15)*60;S.startedAt=Date.now();S.page='test';render();
+ }catch(e){fail(e)}
+}
+function renderTest(){
+ const q=S.qs[S.idx];if(!q)return finishTest();
+ const progress=Math.round(S.idx/S.qs.length*100);
+ shell(`<div class="flex justify-between items-center mb-4"><span class="font-bold">Question ${S.idx+1}/${S.qs.length}</span><span class="card-3d bg-yellow-200 px-4 py-2 font-bold" id="timer">15:00</span><span class="font-bold">⭐ ${S.score}</span></div><div class="progress mb-5"><div style="width:${progress}%"></div></div>
+ ${adDiv('QUIZ_EVERY_5')&&S.idx>0&&S.idx%5===0?adDiv('QUIZ_EVERY_5'):''}
+ <article class="card-3d bg-white p-5 sm:p-7"><p class="text-sm muted font-semibold mb-2">QUESTION ${S.idx+1}</p><h2 class="text-xl sm:text-2xl font-semibold">${esc(q.question)}</h2>${q.question_image_url?`<img class="max-h-64 rounded-xl my-4 mx-auto" src="${esc(q.question_image_url)}" alt="Question illustration">`:''}
+ <div class="grid gap-3 mt-6">${[1,2,3,4].map((n)=>`<button class="option card-3d bg-orange-50 p-4 text-left font-semibold" onclick="answer(${n})"><span class="inline-flex rounded-full bg-yellow-300 w-8 h-8 items-center justify-center mr-2">${'ABCD'[n-1]}</span>${esc(q['option'+n])}${q.option_images?.[n-1]?`<img class="max-h-24 mt-2" src="${esc(q.option_images[n-1])}">`:''}</button>`).join('')}</div></article>`);
+ startTimer();
+}
+function startTimer(){const tick=()=>{const el=$('timer');if(!el)return;const m=Math.floor(S.timer/60),s=S.timer%60;el.textContent=`${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;if(S.timer<=0){clearInterval(S.timerId);finishTest();}else S.timer--};tick();S.timerId=setInterval(tick,1000)}
+function answer(sel){if(S.answers[S.idx]!==undefined)return;const q=S.qs[S.idx];S.answers[S.idx]=sel;if(Number(q.correct_option)===sel)S.score++;S.idx++;if(S.idx>=S.qs.length)finishTest();else render()}
+async function finishTest(){clearInterval(S.timerId);S.page='result';await saveReport();render()}
+async function saveReport(){
+ if(!configured()||!S.test)return;
+ const percentage=Math.round(S.score/S.qs.length*100),wrong=S.qs.map((q,i)=>({...q,user_answer:S.answers[i]})).filter(q=>Number(q.correct_option)!==Number(q.user_answer)).map(q=>q.question_no),correct=S.qs.map((q,i)=>({...q,user_answer:S.answers[i]})).filter(q=>Number(q.correct_option)===Number(q.user_answer)).map(q=>q.question_no);
+ const {error}=await supabase.from('test_reports').insert({user_id:S.deviceId,test_id:S.test.id,class_id:S.cls,subject_id:S.subject?.id,score:S.score,total:S.qs.length,percentage,time_taken:Math.round((Date.now()-S.startedAt)/1000),wrong_questions:wrong,correct_questions:correct});if(error)console.warn(error)
+}
+function renderResult(){
+ const pct=Math.round(S.score/S.qs.length*100),stars=pct<40?'⭐':pct<=70?'⭐⭐':'⭐⭐⭐';
+ shell(`<div class="text-center py-5"><div class="text-6xl">🏆</div><h1 class="text-4xl font-bold mt-3">Test Complete!</h1><div class="text-4xl my-3">${stars}</div><div class="card-3d bg-yellow-200 p-6 my-5 inline-block min-w-64"><div class="text-5xl font-bold">${S.score}/${S.qs.length}</div><div class="text-xl font-bold">${pct}% Score</div></div></div>${adDiv('RESULT_1')}<div class="grid grid-cols-2 sm:grid-cols-4 gap-3"><button class="btn bg-green-300" onclick="downloadPDF()">⬇ Free PDF</button><a class="btn bg-yellow-300 text-center" href="https://rzp.io/l/quizy10" target="_blank" rel="noopener">Paid PDF ₹10</a><a class="btn bg-orange-300 text-center" href="https://rzp.io/l/quizy10" target="_blank" rel="noopener">Pro ₹29</a><button class="btn bg-sky-300" onclick="shareWA()">WhatsApp</button></div><button class="btn bg-white w-full mt-4" onclick="goHome()">Go Home</button>${adDiv('RESULT_2')}<h2 class="text-2xl font-bold mt-7 mb-3">Review answers</h2><div class="space-y-3">${S.qs.map((q,i)=>`<details class="card-3d bg-white p-4"><summary class="font-bold cursor-pointer">Q${i+1}. ${esc(q.question)}</summary><p class="mt-3">Your answer: <b>${S.answers[i]?esc(q['option'+(S.answers[i])]):'Not answered'}</b></p><p>Correct: <b class="text-green-700">${esc(q['option'+q.correct_option])}</b></p><p class="mt-2 muted">${esc(q.explanation||'No explanation provided.')}</p>${q.explanation_image_url?`<img class="max-h-48 mt-2" src="${esc(q.explanation_image_url)}">`:''}</details>`).join('')}</div>`);
+}
+function downloadPDF(){try{const {jsPDF}=window.jspdf,doc=new jsPDF();doc.setFontSize(20);doc.text('Quizy Class Test Report',15,18);doc.setFontSize(12);doc.text(`Score: ${S.score}/${S.qs.length} (${Math.round(S.score/S.qs.length*100)}%)`,15,30);let y=42;S.qs.forEach((q,i)=>{const lines=doc.splitTextToSize(`${i+1}. ${q.question}`,175);if(y+lines.length*6>280){doc.addPage();y=18}doc.text(lines,15,y);y+=lines.length*6;const ans=`Your: ${S.answers[i]?q['option'+S.answers[i]]:'Not answered'} | Correct: ${q['option'+q.correct_option]}`;const a=doc.splitTextToSize(ans,175);doc.text(a,18,y);y+=a.length*6+5;if(q.explanation){const ex=doc.splitTextToSize(`Explanation: ${q.explanation}`,175);if(y+ex.length*6>280){doc.addPage();y=18}doc.text(ex,18,y);y+=ex.length*6+4}});doc.save('quizy-result.pdf')}catch(e){fail(e)}}
+function shareWA(){const text=`Maine Quizy pe ${S.score}/${S.qs.length} score kiya! Tum bhi practice karo.`;window.open('https://wa.me/?text='+encodeURIComponent(text),'_blank')}
+function goHome(){S.page='home';S.cls=null;S.stream=null;S.subject=null;render()}
+function goBack(){if(S.page==='class')goHome();else if(S.page==='subject'){S.page='class';render();if(S.cls<11)loadSubjects()}else goHome()}
+function openInfo(p){S.page=p;render()}
+function renderInfo(p){const content={about:['About Quizy','Quizy helps students practise chapter-wise multiple-choice questions for Classes 9–12. Content may be added by administrators and should be checked against the current board syllabus.'],privacy:['Privacy Policy','Quizy stores test responses and a browser-generated device identifier to show practice reports. Do not submit sensitive personal information. Contact the site administrator for data requests.'],contact:['Contact','For corrections, content issues or support, contact: singhrishabh00124@gmail.com (Owner: Rishabh Singh)'],disclaimer:['Disclaimer','Quizy is an independent learning aid and is not affiliated with CBSE or the Bihar School Examination Board. Ad approval is not guaranteed; publish complete original content, navigation, privacy disclosures and contact details before applying.']}[p];shell(`${header()}<article class="card-3d bg-white p-6"><h1 class="text-3xl font-bold mb-4">${content[0]}</h1><p class="leading-7">${content[1]}</p></article>`)}
+function openAdmin(){S.page='admin';render()}
+function checkAdmin(){return localStorage.getItem('adminEmail')===ADMIN_EMAIL}
+function renderAdmin(){if(!checkAdmin()){shell(`${header()}<div class="card-3d bg-white p-6 max-w-md mx-auto"><h1 class="text-3xl font-bold">Admin Login</h1><label>Email</label><input id="adminEmail" type="email" placeholder="Admin email"><button class="btn bg-yellow-300 w-full mt-4" onclick="adminLogin()">Login</button><p class="muted text-sm mt-3">Prototype email gate only; secure admin access with Supabase Auth and database policies before deployment.</p></div>`);return}
+ shell(`${header()}<div class="flex flex-wrap gap-2 mb-5">${[['upload','Upload Test'],['bulk','Bulk 100 Qs'],['ads','Ad Control'],['manage','Manage Tests']].map(([k,n])=>`<button class="btn ${S.adminTab===k?'tab-active':'bg-white'}" onclick="showTab('${k}')">${n}</button>`).join('')}</div>
+ <section id="tab-upload" class="${S.adminTab==='upload'?'':'hidden'} card-3d bg-white p-5"><h2 class="text-2xl font-bold">Create test</h2>
+ <div class="grid sm:grid-cols-2 gap-3"><div><label>Class</label><select id="t_class">${[9,10,11,12].map(x=>`<option>${x}</option>`)}</select></div><div><label>Stream</label><select id="t_stream"><option>General</option><option>Science</option><option>Commerce</option><option>Arts</option></select></div><div><label>Subject</label><input id="t_subject" placeholder="Mathematics"></div><div><label>Chapter number</label><input id="t_chapter_no" type="number" min="1" value="1"></div><div><label>Chapter name</label><input id="t_chapter" placeholder="Number Systems"></div><div><label>Slug (optional)</label><input id="t_slug" placeholder="Auto-generated"></div><div><label>Type</label><select id="t_type"><option value="free">Free</option><option value="pro">Pro</option></select></div><div><label>Price ₹</label><input id="t_price" type="number" value="0"></div><div><label>Language</label><select id="t_lang"><option value="hinglish">Hinglish</option><option value="hi">Hindi</option><option value="en">English</option></select></div><div><label>Difficulty</label><select id="t_diff"><option>easy</option><option selected>medium</option><option>hard</option></select></div></div>
+ <label>SEO introduction</label><textarea id="t_intro" rows="3" maxlength="1500" placeholder="Describe this chapter test…"></textarea><label class="flex items-center gap-2"><input id="t_pub" type="checkbox" checked class="w-5"> Publish test</label><button class="btn bg-green-300 mt-4" onclick="createTest()">Create test</button><p id="t_status" class="mt-3"></p></section>
+ <section id="tab-bulk" class="${S.adminTab==='bulk'?'':'hidden'} card-3d bg-white p-5"><h2 class="text-2xl font-bold">Bulk CSV upload</h2><p class="muted text-sm my-2">Headers: test_slug, question, question_image_url, option1, option2, option3, option4, correct_option, explanation, explanation_image_url. correct_option must be 1–4.</p><input id="csvFile" type="file" accept=".csv,text/csv"><button class="btn bg-green-300 mt-4" onclick="uploadCSV()">Upload CSV</button><p id="csvStatus" class="mt-3"></p><hr class="my-5"><h3 class="text-xl font-bold">Add one question</h3><label>Test slug</label><input id="sq_test_slug"><label>Question</label><textarea id="sq_q"></textarea><div class="grid sm:grid-cols-2 gap-2">${[1,2,3,4].map(n=>`<div><label>Option ${n}</label><input id="sq_o${n}"></div>`).join('')}</div><label>Correct option</label><select id="sq_correct"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select><label>Explanation</label><textarea id="sq_exp"></textarea><button class="btn bg-yellow-300 mt-4" onclick="addSingleQ()">Add question</button></section>
+ <section id="tab-ads" class="${S.adminTab==='ads'?'':'hidden'} card-3d bg-white p-5"><h2 class="text-2xl font-bold">Ad slot controls</h2><p class="muted text-sm">Only HOME_1 and RESULT_1 are enabled by default. Add approved AdSense IDs after approval.</p><button class="btn bg-yellow-300 my-3" onclick="seedAds()">Seed 8 slots</button><div id="adList"></div></section>
+ <section id="tab-manage" class="${S.adminTab==='manage'?'':'hidden'} card-3d bg-white p-5"><h2 class="text-2xl font-bold">Manage tests</h2><input id="searchTest" placeholder="Search chapter name…" oninput="loadManageTests()" class="my-3"><div id="manageList"></div></section>`);
+ if(S.adminTab==='ads')loadAdList();if(S.adminTab==='manage')loadManageTests();
+}
+function adminLogin(){const v=$('adminEmail')?.value.trim().toLowerCase();if(v===ADMIN_EMAIL.toLowerCase()){localStorage.setItem('adminEmail',ADMIN_EMAIL);renderAdmin();toast('Admin view unlocked on this device')}else toast('Email not recognised')}
+function showTab(t){S.adminTab=t;renderAdmin()}
+async function createTest(){
+ const status=$('t_status');try{if(!configured())throw Error('Set the real Supabase key first');const cls=Number($('t_class').value),streamName=$('t_stream').value,subjectName=$('t_subject').value.trim(),chapter=$('t_chapter').value.trim(),no=Number($('t_chapter_no').value);if(!subjectName||!chapter||!no)throw Error('Fill subject, chapter number and chapter name');
+ const {data:st,error:se}=await supabase.from('streams').select('id').eq('class_id',cls).eq('name',cls<11?'General':streamName).single();if(se)throw se;
+ let {data:sub,error:sbe}=await supabase.from('subjects').select('id').eq('class_id',cls).eq('stream_id',st.id).ilike('name',subjectName).maybeSingle();if(sbe)throw sbe;
+ if(!sub){const {data,error}=await supabase.from('subjects').insert({class_id:cls,stream_id:st.id,name:subjectName}).select('id').single();if(error)throw error;sub=data}
+ const slug=$('t_slug').value.trim()||`class-${cls}-${subjectName}-chapter-${no}-${chapter}`.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+ const payload={subject_id:sub.id,chapter_no:no,chapter_name:chapter,slug,type:$('t_type').value,price:Number($('t_price').value)||0,language:$('t_lang').value,difficulty:$('t_diff').value,intro_text:$('t_intro').value,is_published:$('t_pub').checked,time_limit:15,total_questions:20};
+ const {error}=await supabase.from('tests').insert(payload);if(error)throw error;status.textContent='Test created successfully. Slug: '+slug;toast('Test created');
+ }catch(e){status.textContent=e.message;fail(e)}
+}
+async function uploadCSV(){
+ const out=$('csvStatus'),file=$('csvFile').files[0];if(!file){out.textContent='Choose a CSV file first.';return}
+ if(!configured()){out.textContent='Set the real Supabase key first.';return}
+ out.textContent='Reading CSV…';
+ Papa.parse(file,{header:true,skipEmptyLines:true,complete:async res=>{
+ let ok=0,errors=[];const nextNo={};
+ for(let i=0;i<res.data.length;i++){const r=res.data[i];try{
+ if(!r.question||!r.test_slug)throw Error('Missing question or test_slug');
+ let tid=nextNo[r.test_slug]?.id;if(!tid){const {data,error}=await supabase.from('tests').select('id').eq('slug',r.test_slug).single();if(error)throw error;tid=data.id;nextNo[r.test_slug]={id:tid,count:0}}
+ const count=++nextNo[r.test_slug].count;const {error}=await supabase.from('questions').insert({test_id:tid,question_no:count,question:r.question,question_image_url:r.question_image_url||null,option1:r.option1,option2:r.option2,option3:r.option3,option4:r.option4,correct_option:Number(r.correct_option),explanation:r.explanation||'',explanation_image_url:r.explanation_image_url||null});if(error)throw error;ok++;
+ }catch(e){errors.push(`Row ${i+2}: ${e.message}`)}}
+ out.innerHTML=`Inserted ${ok} questions. ${errors.length} errors.<br>${errors.slice(0,20).map(esc).join('<br>')}`;
+ },error:e=>out.textContent=e.message});
+}
+async function addSingleQ(){try{const slug=$('sq_test_slug').value.trim();const {data:t,error:te}=await supabase.from('tests').select('id').eq('slug',slug).single();if(te)throw te;const {count}=await supabase.from('questions').select('*',{count:'exact',head:true}).eq('test_id',t.id);const {error}=await supabase.from('questions').insert({test_id:t.id,question_no:(count||0)+1,question:$('sq_q').value,option1:$('sq_o1').value,option2:$('sq_o2').value,option3:$('sq_o3').value,option4:$('sq_o4').value,correct_option:Number($('sq_correct').value),explanation:$('sq_exp').value});if(error)throw error;toast('Question added')}catch(e){fail(e)}}
+const DEFAULT_ADS=[['HOME_1',true],['RESULT_1',true],['CLASS_9_1',false],['SUBJECT_LIST_1',false],['TEST_LIST_1',false],['QUIZ_EVERY_5',false],['RESULT_2',false],['REPORTS_1',false]];
+async function seedAds(){try{const rows=DEFAULT_ADS.map(([slot_key,enabled])=>({slot_key,enabled}));const {error}=await supabase.from('ad_slots').upsert(rows,{onConflict:'slot_key',ignoreDuplicates:true});if(error)throw error;await loadAds();loadAdList();toast('Ad slots ready')}catch(e){fail(e)}}
+async function loadAdList(){if(!configured())return;const {data,error}=await supabase.from('ad_slots').select('*').order('slot_key');if(error){fail(error);return}S.adSlots=data||[];$('adList').innerHTML=(data||[]).map(a=>`<div class="border-b py-4"><b>${esc(a.slot_key)}</b><label class="flex items-center gap-2"><input type="checkbox" class="w-5" ${a.enabled?'checked':''} onchange="toggleAd('${a.id}',this.checked)"> Enabled</label><label>Ad client</label><input id="client-${a.id}" value="${esc(a.ad_client||'')}" placeholder="ca-pub-…"><label>Ad slot ID</label><input id="slot-${a.id}" value="${esc(a.ad_slot_id||'')}" placeholder="1234567890"><button class="btn bg-yellow-300 mt-2" onclick="saveAd('${a.id}')">Save</button></div>`).join('')}
+async function toggleAd(id,checked){const {error}=await supabase.from('ad_slots').update({enabled:checked}).eq('id',id);if(error)fail(error);else{await loadAds();toast('Ad setting updated')}}
+async function saveAd(id){const {error}=await supabase.from('ad_slots').update({ad_client:$('client-'+id).value,ad_slot_id:$('slot-'+id).value}).eq('id',id);if(error)fail(error);else toast('Ad details saved')}
+async function loadManageTests(){if(!configured()||!$('manageList'))return;const search=$('searchTest')?.value||'';let q=supabase.from('tests').select('id,chapter_name,slug,type,price,is_published,created_at').order('created_at',{ascending:false}).limit(50);if(search)q=q.ilike('chapter_name',`%${search}%`);const {data,error}=await q;if(error){fail(error);return}$('manageList').innerHTML=(data||[]).map(t=>`<div class="border-b py-3"><b>${esc(t.chapter_name)}</b><p class="text-sm muted">${esc(t.slug)} • ${t.type==='pro'?'Pro ₹'+t.price:'Free'}</p><div class="flex gap-2 mt-2"><button class="btn bg-green-200" onclick="togglePublish('${t.id}',${!t.is_published})">${t.is_published?'Unpublish':'Publish'}</button><button class="btn bg-red-200" onclick="deleteTest('${t.id}')">Delete</button></div></div>`).join('')||'No tests found'}
+async function togglePublish(id,pub){const {error}=await supabase.from('tests').update({is_published:pub}).eq('id',id);if(error)fail(error);else loadManageTests()}
+async function deleteTest(id){if(!confirm('Delete this test and all its questions?'))return;const {error}=await supabase.from('questions').delete().eq('test_id',id);if(error){fail(error);return}const {error:e}=await supabase.from('tests').delete().eq('id',id);if(e)fail(e);else{toast('Test deleted');loadManageTests()}}
+(async()=>{
+  const connected=initSupabase();
+  if(connected) await loadAds();
+  render();
+  if(!connected) console.info('Quizy is in preview mode. Add a real Supabase key and ensure the Supabase CDN is reachable to load database content.');
+})();
+</script>
+</body>
+</html>
